@@ -17,9 +17,10 @@ package tasks
 import (
 	"context"
 
+	"github.com/pkg/errors"
+
 	"github.com/openshift/cluster-monitoring-operator/pkg/client"
 	"github.com/openshift/cluster-monitoring-operator/pkg/manifests"
-	"github.com/pkg/errors"
 )
 
 type KubeStateMetricsTask struct {
@@ -35,6 +36,16 @@ func NewKubeStateMetricsTask(client *client.Client, factory *manifests.Factory) 
 }
 
 func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
+	cm, err := t.factory.KubeStateMetricsCRSConfigMap()
+	if err != nil {
+		return errors.Wrap(err, "initializing kube-state-metrics CRS ConfigMap failed")
+	}
+
+	err = t.client.CreateOrUpdateConfigMap(ctx, cm)
+	if err != nil {
+		return errors.Wrap(err, "reconciling kube-state-metrics CRS ConfigMap failed")
+	}
+
 	sa, err := t.factory.KubeStateMetricsServiceAccount()
 	if err != nil {
 		return errors.Wrap(err, "initializing kube-state-metrics Service failed")

@@ -1,12 +1,26 @@
 local tmpVolumeName = 'volume-directive-shadow';
 local tlsVolumeName = 'kube-state-metrics-tls';
+local crsVolumeName = 'kube-state-metrics-custom-resource-state-config';
+local crsAssetPath = '/etc/kube-state-metrics/custom-resource-state-config.yaml';
 
 local kubeStateMetrics = import 'github.com/prometheus-operator/kube-prometheus/jsonnet/kube-prometheus/components/kube-state-metrics.libsonnet';
+local kubeStateMetricsCRS = import './kube-state-metrics-custom-resource-state.libsonnet';
 local generateSecret = import '../utils/generate-secret.libsonnet';
 local generateServiceMonitor = import '../utils/generate-service-monitors.libsonnet';
 
 function(params)
   local cfg = params;
+  local utils = {
+    getDirectoryPath(filePath):: (
+      local pathElements = std.split(filePath, '/');
+      local pathElementsLength = std.length(pathElements);
+      if pathElementsLength > 1 then
+        std.join('/', [pathElements[i] for i in std.range(0, pathElementsLength - 2)])
+      else
+        "."
+    ),
+  };
+  local crsConfig = kubeStateMetricsCRS.Config();
 
   kubeStateMetrics(cfg) + {
     // Adding the serving certs annotation causes the serving certs controller
@@ -19,6 +33,22 @@ function(params)
         },
       },
     },
+
+	clusterRole+: {
+	  rules+: [
+	    {
+	      apiGroups: ['autoscaling.k8s.io'],
+	      resources: ['verticalpodautoscalers'],
+	      verbs: ['list', 'watch'],
+	    },
+	    // https://github.com/kubernetes/kube-state-metrics/pull/1851/files#diff-916e6863e1245c673b4e5965c98dc27bafbd72650fdb38ce65ea73ee6304e027R45-R47
+	    {
+	      apiGroups: ['apiextensions.k8s.io'],
+	      resources: ['customresourcedefinitions'],
+	      verbs: ['list', 'watch'],
+	    },
+	  ],
+	},
 
     // This changes kube-state-metrics to be scraped with validating TLS.
 
@@ -204,6 +234,7 @@ function(params)
                           ^kube_.+_annotations$
                         |||,
                         '--metric-labels-allowlist=pods=[*],nodes=[*],namespaces=[*],persistentvolumes=[*],persistentvolumeclaims=[*],poddisruptionbudgets=[*]',
+                        '--custom-resource-state-config-file=' + crsAssetPath,
                       ],
                       securityContext: {},
                       resources: {
@@ -216,6 +247,11 @@ function(params)
                         mountPath: '/tmp',
                         name: tmpVolumeName,
                         readOnly: false,
+                      },
+                      {
+                        mountPath: utils.getDirectoryPath(crsAssetPath),
+						name: crsVolumeName,
+						readOnly: false,
                       }],
                     },
                 super.containers,
@@ -243,6 +279,12 @@ function(params)
                   secretName: 'kube-state-metrics-kube-rbac-proxy-config',
                 },
               },
+              {
+                name: crsVolumeName,
+                configMap: {
+				  name: crsVolumeName,
+		        },
+              },
             ],
             securityContext: {},
             priorityClassName: 'system-cluster-critical',
@@ -250,4 +292,6 @@ function(params)
         },
       },
     },
+
+    customResourceStateConfig: crsConfig,
   }
