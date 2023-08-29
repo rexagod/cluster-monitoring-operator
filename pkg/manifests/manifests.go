@@ -113,6 +113,7 @@ var (
 	KubeStateMetricsMinimalServiceMonitor = "kube-state-metrics/minimal-service-monitor.yaml"
 	KubeStateMetricsPrometheusRule        = "kube-state-metrics/prometheus-rule.yaml"
 	KubeStateMetricsKubeRbacProxySecret   = "kube-state-metrics/kube-rbac-proxy-secret.yaml"
+	KubeStateMetricsCRSConfig             = "kube-state-metrics/custom-resource-state-config.yaml"
 
 	OpenShiftStateMetricsClusterRoleBinding  = "openshift-state-metrics/cluster-role-binding.yaml"
 	OpenShiftStateMetricsClusterRole         = "openshift-state-metrics/cluster-role.yaml"
@@ -808,6 +809,27 @@ func (f *Factory) KubeStateMetricsRBACProxySecret() (*v1.Secret, error) {
 
 func (f *Factory) KubeStateMetricsPrometheusRule() (*monv1.PrometheusRule, error) {
 	return f.NewPrometheusRule(f.assets.MustNewAssetReader(KubeStateMetricsPrometheusRule))
+}
+
+func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
+	data, err := io.ReadAll(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
+	if err != nil {
+		return nil, err
+	}
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      strings.ReplaceAll(strings.TrimSuffix(KubeStateMetricsCRSConfig, ".yaml"), "/", "-"),
+			Namespace: f.namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "cluster-monitoring-operator",
+				"app.kubernetes.io/part-of":    "openshift-monitoring",
+			},
+		},
+		Data: map[string]string{
+			KubeStateMetricsCRSConfig[strings.LastIndex(KubeStateMetricsCRSConfig, "/")+1:]: string(data),
+		},
+	}
+	return cm, nil
 }
 
 func (f *Factory) OpenShiftStateMetricsClusterRoleBinding() (*rbacv1.ClusterRoleBinding, error) {

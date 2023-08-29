@@ -40,6 +40,7 @@ spec:
           ^kube_secret_labels$,
           ^kube_.+_annotations$
         - --metric-labels-allowlist=pods=[*],nodes=[*],namespaces=[*],persistentvolumes=[*],persistentvolumeclaims=[*],poddisruptionbudgets=[*]
+        - --custom-resource-state-config-file=/etc/kube-state-metrics/custom-resource-state-config.yaml
         - |
           --metric-denylist=
           ^kube_.+_created$,
@@ -64,6 +65,9 @@ spec:
         - mountPath: /tmp
           name: volume-directive-shadow
           readOnly: false
+        - mountPath: /etc/kube-state-metrics
+          name: kube-state-metrics-custom-resource-state-config
+          readOnly: true
       - args:
         - --secure-listen-address=:8443
         - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
@@ -139,3 +143,6 @@ spec:
       - name: kube-state-metrics-kube-rbac-proxy-config
         secret:
           secretName: kube-state-metrics-kube-rbac-proxy-config
+      - configMap:
+          name: kube-state-metrics-custom-resource-state-config
+        name: kube-state-metrics-custom-resource-state-config
