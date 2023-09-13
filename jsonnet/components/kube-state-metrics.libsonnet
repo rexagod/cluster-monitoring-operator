@@ -17,7 +17,7 @@ function(params)
       if pathElementsLength > 1 then
         std.join('/', [pathElements[i] for i in std.range(0, pathElementsLength - 2)])
       else
-        "."
+        '.'
     ),
   };
   local crsConfig = kubeStateMetricsCRS.Config();
@@ -34,21 +34,21 @@ function(params)
       },
     },
 
-	clusterRole+: {
-	  rules+: [
-	    {
-	      apiGroups: ['autoscaling.k8s.io'],
-	      resources: ['verticalpodautoscalers'],
-	      verbs: ['list', 'watch'],
-	    },
-	    // https://github.com/kubernetes/kube-state-metrics/pull/1851/files#diff-916e6863e1245c673b4e5965c98dc27bafbd72650fdb38ce65ea73ee6304e027R45-R47
-	    {
-	      apiGroups: ['apiextensions.k8s.io'],
-	      resources: ['customresourcedefinitions'],
-	      verbs: ['list', 'watch'],
-	    },
-	  ],
-	},
+    clusterRole+: {
+      rules+: [
+        {
+          apiGroups: ['autoscaling.k8s.io'],
+          resources: ['verticalpodautoscalers'],
+          verbs: ['list', 'watch'],
+        },
+        // https://github.com/kubernetes/kube-state-metrics/pull/1851/files#diff-916e6863e1245c673b4e5965c98dc27bafbd72650fdb38ce65ea73ee6304e027R45-R47
+        {
+          apiGroups: ['apiextensions.k8s.io'],
+          resources: ['customresourcedefinitions'],
+          verbs: ['list', 'watch'],
+        },
+      ],
+    },
 
     // This changes kube-state-metrics to be scraped with validating TLS.
 
@@ -243,16 +243,18 @@ function(params)
                           cpu: '2m',
                         },
                       },
-                      volumeMounts: [{
-                        mountPath: '/tmp',
-                        name: tmpVolumeName,
-                        readOnly: false,
-                      },
-                      {
-                        mountPath: utils.getDirectoryPath(crsAssetPath),
-						name: crsVolumeName,
-						readOnly: false,
-                      }],
+                      volumeMounts: [
+                        {
+                          mountPath: '/tmp',
+                          name: tmpVolumeName,
+                          readOnly: false,
+                        },
+                        {
+                          mountPath: utils.getDirectoryPath(crsAssetPath),
+                          name: crsVolumeName,
+                          readOnly: false,
+                        },
+                      ],
                     },
                 super.containers,
               ),
@@ -282,8 +284,8 @@ function(params)
               {
                 name: crsVolumeName,
                 configMap: {
-				  name: crsVolumeName,
-		        },
+                  name: crsVolumeName,
+                },
               },
             ],
             securityContext: {},
