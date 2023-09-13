@@ -99,6 +99,6 @@ local crsConfig = {
 };
 
 {
-  Config(name='kube-state-metrics-custom-resource-state-config', ns='openshift-monitoring'):: crsConfig,
+  Config():: crsConfig,
 }
 
