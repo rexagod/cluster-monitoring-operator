@@ -3,27 +3,26 @@ local getCommonLabels(resourceType) =
     resource: resourceType,
     unit: if resourceType == 'cpu' then 'cores'
           else
-             if resourceType == 'memory' then 'bytes' else 'unknown'};
+             if resourceType == 'memory' then 'bytes'};
 
 local vpaMetric(name, help, type, statesetScope='') = if name == '' || help == '' || type == '' then null else {
-  local resourceType = if std.endsWith(name, 'cpu') then 'cpu' else if std.endsWith(name, 'memory') then 'memory' else '',
   local nameParts = std.split(name, '_'),
-  local lastThree = [nameParts[i] for i in std.range(std.length(nameParts) - 3, std.length(nameParts) - 1)],
-  local lastTwo = if lastThree[2] == type then [lastThree[0], lastThree[1]] else [lastThree[1], lastThree[2]],
-  local defaultValueFrom = 1,
-  local resolvedValueFrom = if resourceType == '' then null
-  else {
-    local noncamelcasedField = lastTwo[0],
-    local camelcasedFields = {
-      lowerbound: 'lowerBound',
-      upperbound: 'upperBound',
-      uncappedtarget: 'uncappedTarget',
-      minallowed: 'minAllowed',
-      maxallowed: 'maxAllowed',
-    },
-    local camelcasedField = if std.objectHas(camelcasedFields, noncamelcasedField) then camelcasedFields[noncamelcasedField] else noncamelcasedField,
-    valueFrom: [camelcasedField, lastTwo[1]],
+  local le = std.length(nameParts),
+  local resourceType = if nameParts[le-1] == 'cpu' then 'cpu' else if nameParts[le-1] == 'memory' then 'memory' else '',
+  local lastTwo = if nameParts[le-1] == type then nameParts[le-3:le-1] else nameParts[le-2:le],
+  local noncamelcasedField = lastTwo[0],
+  local camelcasedFields = {
+    lowerbound: 'lowerBound',
+    upperbound: 'upperBound',
+    uncappedtarget: 'uncappedTarget',
+    minallowed: 'minAllowed',
+    maxallowed: 'maxAllowed',
   },
+  local camelcasedField = if noncamelcasedField in camelcasedFields then camelcasedFields[noncamelcasedField] else noncamelcasedField,
+  // 1 is the default for resolvedValueFrom
+  local resolvedValueFrom = if resourceType == '' then 1
+  else
+    [camelcasedField, lastTwo[1]],
   local includeAllFields = {
     annotations: ['metadata', 'annotations'],
     labels: ['metadata', 'labels'],
@@ -50,18 +49,18 @@ local vpaMetric(name, help, type, statesetScope='') = if name == '' || help == '
   each: {
     type: std.asciiUpper(type[0]) + type[1:],
     [type]: {
-      [if std.length(shortPathMatches) > 1 then error 'expected 1 path match got ' + std.length(shortPathMatches) else if std.length(shortPathMatches) == 1 then 'path' else null]: shortPathMatches[0],
+      [if std.length(shortPathMatches) > 1 then error 'expected 1 path match got ' + std.length(shortPathMatches) else if std.length(shortPathMatches) == 1 then 'path']: shortPathMatches[0],
       // StateSets do not support internal labelsFromPath.
-      [if type == 'stateSet' then null else 'labelsFromPath']: {
+      [if type != 'stateSet' then 'labelsFromPath']: {
         container: ['containerName'],
-        [if std.objectHas(includeAllFields, lastTwo[1]) then '*' else null]: includeAllFields[lastTwo[1]],
+        [if std.objectHas(includeAllFields, lastTwo[1]) then '*']: includeAllFields[lastTwo[1]],
       },
       // labelName is only used by StateSets.
-      [if type == 'stateSet' then 'labelName' else null]: label,
+      [if type == 'stateSet' then 'labelName']: label,
       // list is only used by StateSets.
-      [if type == 'stateSet' && statesetScope != null then 'list' else null]: statesetScope,
+      [if type == 'stateSet' && statesetScope != null then 'list']: statesetScope,
       // valueFrom is only used by non-StateSets.
-      [if type == 'stateSet' then null else 'valueFrom']: if resourceType == '' then defaultValueFrom else if resolvedValueFrom != null then resolvedValueFrom.valueFrom else null,
+      [if type != 'stateSet' then 'valueFrom']: resolvedValueFrom,
     },
   },
   labelsFromPath: commonLabelsFromPath,
