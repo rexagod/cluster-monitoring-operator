@@ -1,3 +1,10 @@
+local getCommonLabels(resourceType) =
+  if resourceType != '' then {
+    resource: resourceType,
+    unit: if resourceType == 'cpu' then 'cores'
+          else
+             if resourceType == 'memory' then 'bytes' else 'unknown'};
+
 local vpaMetric(name, help, rawType, statesetScope='') = if name == '' || help == '' || rawType == '' then null else {
   local type = if rawType == 'StateSet' then 'stateSet' else std.asciiLower(rawType),
   local resourceType = if std.endsWith(name, 'cpu') then 'cpu' else if std.endsWith(name, 'memory') then 'memory' else '',
@@ -40,10 +47,7 @@ local vpaMetric(name, help, rawType, statesetScope='') = if name == '' || help =
   // spec.resources[*].groupVersionKind[*].metrics[*] (kube-state-metrics >=v2.5.0)
   name: name,
   help: help,
-  commonLabels: if resourceType == '' then null else {
-    resource: resourceType,
-    unit: if resourceType == 'cpu' then 'cores' else if resourceType == 'memory' then 'bytes' else 'unknown',
-  },
+  commonLabels: getCommonLabels(resourceType),
   each: {
     type: rawType,
     [type]: {
