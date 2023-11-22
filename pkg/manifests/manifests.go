@@ -812,22 +812,20 @@ func (f *Factory) KubeStateMetricsPrometheusRule() (*monv1.PrometheusRule, error
 }
 
 func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
-	data, err := io.ReadAll(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
+	manifest, err := io.ReadAll(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
 	if err != nil {
 		return nil, err
 	}
-	cm := &v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ReplaceAll(strings.TrimSuffix(KubeStateMetricsCRSConfig, ".yaml"), "/", "-"),
-			Namespace: f.namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cluster-monitoring-operator",
-				"app.kubernetes.io/part-of":    "openshift-monitoring",
-			},
-		},
-		Data: map[string]string{
-			KubeStateMetricsCRSConfig[strings.LastIndex(KubeStateMetricsCRSConfig, "/")+1:]: string(data),
-		},
+	cm := &v1.ConfigMap{}
+	if err := yaml.Unmarshal(manifest, cm); err != nil {
+		return nil, err
+	}
+	// Populate KSM's CRS configmap's fields.
+	cm.Name = strings.ReplaceAll(strings.TrimSuffix(KubeStateMetricsCRSConfig, ".yaml"), "/", "-")
+	cm.Namespace = f.namespace
+	cm.Labels = map[string]string{
+		"app.kubernetes.io/managed-by": "cluster-monitoring-operator",
+		"app.kubernetes.io/part-of":    "openshift-monitoring",
 	}
 	return cm, nil
 }
