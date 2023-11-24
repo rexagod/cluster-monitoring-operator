@@ -1,26 +1,25 @@
 local tmpVolumeName = 'volume-directive-shadow';
 local tlsVolumeName = 'kube-state-metrics-tls';
-local crsVolumeName = 'kube-state-metrics-custom-resource-state-config';
-local crsAssetPath = '/etc/kube-state-metrics/custom-resource-state-config.yaml';
+local crsVolumeName = 'kube-state-metrics-custom-resource-state-configmap';
 
 local kubeStateMetrics = import 'github.com/prometheus-operator/kube-prometheus/jsonnet/kube-prometheus/components/kube-state-metrics.libsonnet';
-local kubeStateMetricsCRS = import './kube-state-metrics-custom-resource-state.libsonnet';
+local kubeStateMetricsCRS = import '../utils/kube-state-metrics-custom-resource-state.libsonnet';
 local generateSecret = import '../utils/generate-secret.libsonnet';
 local generateServiceMonitor = import '../utils/generate-service-monitors.libsonnet';
 
 function(params)
   local cfg = params;
-  local utils = {
-    getDirectoryPath(filePath):: (
-      local pathElements = std.split(filePath, '/');
-      local pathElementsLength = std.length(pathElements);
-      if pathElementsLength > 1 then
-        std.join('/', [pathElements[i] for i in std.range(0, pathElementsLength - 2)])
-      else
-        '.'
-    ),
+  local crsConfig = {
+    apiVersion: 'v1',
+    kind: 'ConfigMap',
+    metadata: {
+      name: 'kube-state-metrics-custom-resource-state-configmap',
+      namespace: 'openshift-monitoring',
+    },
+    data: {
+      'custom-resource-state-configmap.yaml': std.manifestYamlDoc(kubeStateMetricsCRS.Config()),
+    },
   };
-  local crsConfig = kubeStateMetricsCRS.Config();
 
   kubeStateMetrics(cfg) + {
     // Adding the serving certs annotation causes the serving certs controller
@@ -234,7 +233,7 @@ function(params)
                           ^kube_.+_annotations$
                         |||,
                         '--metric-labels-allowlist=pods=[*],nodes=[*],namespaces=[*],persistentvolumes=[*],persistentvolumeclaims=[*],poddisruptionbudgets=[*]',
-                        '--custom-resource-state-config-file=' + crsAssetPath,
+                        '--custom-resource-state-config-file=/etc/kube-state-metrics/custom-resource-state-configmap.yaml',
                       ],
                       securityContext: {},
                       resources: {
@@ -250,7 +249,7 @@ function(params)
                           readOnly: false,
                         },
                         {
-                          mountPath: utils.getDirectoryPath(crsAssetPath),
+                          mountPath: '/etc/kube-state-metrics',
                           name: crsVolumeName,
                           readOnly: true,
                         },
@@ -295,5 +294,5 @@ function(params)
       },
     },
 
-    customResourceStateConfig: crsConfig,
+    customResourceStateConfigmap: crsConfig,
   }

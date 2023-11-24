@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  custom-resource-state-config.yaml: |-
+  custom-resource-state-configmap.yaml: |-
     "kind": "CustomResourceStateMetrics"
     "spec":
       "resources":
@@ -557,5 +557,5 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: cluster-monitoring-operator
     app.kubernetes.io/part-of: openshift-monitoring
-  name: ""
-  namespace: ""
+  name: kube-state-metrics-custom-resource-state-configmap
+  namespace: openshift-monitoring

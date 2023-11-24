@@ -113,7 +113,7 @@ var (
 	KubeStateMetricsMinimalServiceMonitor = "kube-state-metrics/minimal-service-monitor.yaml"
 	KubeStateMetricsPrometheusRule        = "kube-state-metrics/prometheus-rule.yaml"
 	KubeStateMetricsKubeRbacProxySecret   = "kube-state-metrics/kube-rbac-proxy-secret.yaml"
-	KubeStateMetricsCRSConfig             = "kube-state-metrics/custom-resource-state-config.yaml"
+	KubeStateMetricsCRSConfig             = "kube-state-metrics/custom-resource-state-configmap.yaml"
 
 	OpenShiftStateMetricsClusterRoleBinding  = "openshift-state-metrics/cluster-role-binding.yaml"
 	OpenShiftStateMetricsClusterRole         = "openshift-state-metrics/cluster-role.yaml"
@@ -819,13 +819,6 @@ func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
 	cm := &v1.ConfigMap{}
 	if err := yaml.Unmarshal(manifest, cm); err != nil {
 		return nil, err
-	}
-	// Populate KSM's CRS configmap's fields.
-	cm.Name = strings.ReplaceAll(strings.TrimSuffix(KubeStateMetricsCRSConfig, ".yaml"), "/", "-")
-	cm.Namespace = f.namespace
-	cm.Labels = map[string]string{
-		"app.kubernetes.io/managed-by": "cluster-monitoring-operator",
-		"app.kubernetes.io/part-of":    "openshift-monitoring",
 	}
 	return cm, nil
 }

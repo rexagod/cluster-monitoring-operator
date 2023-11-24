@@ -37,12 +37,12 @@ func NewKubeStateMetricsTask(client *client.Client, factory *manifests.Factory) 
 func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
 	cm, err := t.factory.KubeStateMetricsCRSConfigMap()
 	if err != nil {
-		return errors.Wrap(err, "initializing kube-state-metrics CRS ConfigMap failed")
+		return errors.Wrap(err, "initializing kube-state-metrics custom-resource-state ConfigMap failed")
 	}
 
 	err = t.client.CreateOrUpdateConfigMap(ctx, cm)
 	if err != nil {
-		return errors.Wrap(err, "reconciling kube-state-metrics CRS ConfigMap failed")
+		return errors.Wrap(err, "reconciling kube-state-metrics custom-resource-state ConfigMap failed")
 	}
 
 	sa, err := t.factory.KubeStateMetricsServiceAccount()

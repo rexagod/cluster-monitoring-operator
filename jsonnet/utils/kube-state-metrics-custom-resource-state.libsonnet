@@ -101,19 +101,6 @@ local crsConfig = {
   },
 };
 
-local configMap = {
-  apiVersion: 'v1',
-  kind: 'ConfigMap',
-  metadata: {
-    name: '',
-    namespace: '',
-    labels: {},
-  },
-  data: {
-    'custom-resource-state-config.yaml': std.manifestYamlDoc(crsConfig),
-  },
-};
-
 {
-  Config():: configMap,
+  Config():: crsConfig,
 }
