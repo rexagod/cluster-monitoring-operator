@@ -812,15 +812,7 @@ func (f *Factory) KubeStateMetricsPrometheusRule() (*monv1.PrometheusRule, error
 }
 
 func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
-	manifest, err := io.ReadAll(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
-	if err != nil {
-		return nil, err
-	}
-	cm := &v1.ConfigMap{}
-	if err := yaml.Unmarshal(manifest, cm); err != nil {
-		return nil, err
-	}
-	return cm, nil
+	return f.NewConfigMap(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
 }
 
 func (f *Factory) OpenShiftStateMetricsClusterRoleBinding() (*rbacv1.ClusterRoleBinding, error) {
