@@ -275,6 +275,10 @@ func (c *Client) KubernetesInterface() kubernetes.Interface {
 	return c.kclient
 }
 
+func (c *Client) ApiExtensionsInterface() apiextensionsclient.Interface {
+	return c.eclient
+}
+
 func (c *Client) EventRecorder() events.Recorder {
 	return c.eventRecorder
 }

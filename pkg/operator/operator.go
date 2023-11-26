@@ -728,7 +728,17 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 		klog.Warningf("Fail to load ConsoleConfig, AlertManager's externalURL may be outdated")
 	}
 
-	factory := manifests.NewFactory(o.namespace, o.namespaceUserWorkload, config, o.loadInfrastructureConfig(ctx), proxyConfig, o.assets, apiServerConfig, consoleConfig)
+	factory := manifests.NewFactory(
+		o.namespace,
+		o.namespaceUserWorkload,
+		config,
+		o.loadInfrastructureConfig(ctx),
+		proxyConfig,
+		o.assets,
+		apiServerConfig,
+		consoleConfig,
+		o.client,
+	)
 
 	tl := tasks.NewTaskRunner(
 		o.client,

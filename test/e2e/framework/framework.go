@@ -171,6 +171,7 @@ func New(kubeConfigPath string) (*Framework, CleanUpFunc, error) {
 			manifests.NewAssets("../../assets"),
 			&manifests.APIServerConfig{},
 			&configv1.Console{},
+			nil,
 		),
 	}
 

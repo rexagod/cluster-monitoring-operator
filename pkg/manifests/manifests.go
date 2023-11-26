@@ -15,6 +15,7 @@
 package manifests
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -34,6 +35,7 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
+	"github.com/openshift/cluster-monitoring-operator/pkg/client"
 	"github.com/openshift/cluster-monitoring-operator/pkg/promqlgen"
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/pkg/errors"
@@ -46,6 +48,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
@@ -73,6 +76,7 @@ const (
 
 	// --enable-feature=exemplar-storage: https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage
 	EnableFeatureExemplarStorageString = "exemplar-storage"
+	verticalPodAutoscalersGR           = "verticalpodautoscalers.autoscaling.k8s.io"
 )
 
 var (
@@ -353,6 +357,7 @@ type Factory struct {
 	assets                *Assets
 	APIServerConfig       *APIServerConfig
 	consoleConfig         *configv1.Console
+	client                *client.Client
 }
 
 // InfrastructureReader has methods to describe the cluster infrastructure.
@@ -368,7 +373,16 @@ type ProxyReader interface {
 	NoProxy() string
 }
 
-func NewFactory(namespace, namespaceUserWorkload string, c *Config, infrastructure InfrastructureReader, proxy ProxyReader, a *Assets, apiServerConfig *APIServerConfig, consoleConfig *configv1.Console) *Factory {
+func NewFactory(
+	namespace, namespaceUserWorkload string,
+	c *Config,
+	infrastructure InfrastructureReader,
+	proxy ProxyReader,
+	a *Assets,
+	apiServerConfig *APIServerConfig,
+	consoleConfig *configv1.Console,
+	client *client.Client,
+) *Factory {
 	return &Factory{
 		namespace:             namespace,
 		namespaceUserWorkload: namespaceUserWorkload,
@@ -378,6 +392,7 @@ func NewFactory(namespace, namespaceUserWorkload string, c *Config, infrastructu
 		assets:                a,
 		APIServerConfig:       apiServerConfig,
 		consoleConfig:         consoleConfig,
+		client:                client,
 	}
 }
 
@@ -812,7 +827,30 @@ func (f *Factory) KubeStateMetricsPrometheusRule() (*monv1.PrometheusRule, error
 }
 
 func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
-	return f.NewConfigMap(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
+	configmap, err := f.NewConfigMap(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
+	if err != nil {
+		return nil, err
+	}
+
+	// Check CRS prerequisites before enabling CRS metrics in CMO.
+	// Currently, the prerequisites are:
+	// * The presence of `VerticalPodAutoscaler` CRD in the cluster: `KubeStateMetricsListErrors` will be fired if absent.
+	_, err = f.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(context.Background(), verticalPodAutoscalersGR, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			i := strings.Index(KubeStateMetricsCRSConfig, "/")
+			if i == -1 {
+				return nil, fmt.Errorf("unable to extract kube-state-metrics' custom-resource-state configuration filename from %s", KubeStateMetricsCRSConfig)
+			}
+			crsConfig := KubeStateMetricsCRSConfig[i+1:]
+
+			// An empty custom-resource-state configuration file will crash KSM (for a non-empty `--custom-resource-state-config-file` flag value).
+			configmap.Data[crsConfig] = "kind: CustomResourceStateMetrics\n"
+		} else {
+			return nil, err
+		}
+	}
+	return configmap, nil
 }
 
 func (f *Factory) OpenShiftStateMetricsClusterRoleBinding() (*rbacv1.ClusterRoleBinding, error) {
