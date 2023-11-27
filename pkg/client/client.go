@@ -1074,6 +1074,10 @@ func (c *Client) CreateOrUpdateDeployment(ctx context.Context, dep *appsv1.Deplo
 	return nil
 }
 
+func (c *Client) GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error) {
+	return c.kclient.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
 func (c *Client) CreateDeployment(ctx context.Context, dep *appsv1.Deployment) error {
 	d, err := c.kclient.AppsV1().Deployments(dep.GetNamespace()).Create(ctx, dep, metav1.CreateOptions{})
 	if err != nil {

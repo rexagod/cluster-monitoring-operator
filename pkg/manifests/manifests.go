@@ -77,6 +77,8 @@ const (
 	// --enable-feature=exemplar-storage: https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage
 	EnableFeatureExemplarStorageString = "exemplar-storage"
 	verticalPodAutoscalersGR           = "verticalpodautoscalers.autoscaling.k8s.io"
+
+	annotationKSMCRSConfigEdit = "custom-resource-state/last-controller-config-edit"
 )
 
 var (
@@ -846,6 +848,17 @@ func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
 
 			// An empty custom-resource-state configuration file will crash KSM (for a non-empty `--custom-resource-state-config-file` flag value).
 			configmap.Data[crsConfig] = "kind: CustomResourceStateMetrics\n"
+
+			// TODO: Update KSM to trigger a restart, until we address the race issue on config-change-restarts upstream.
+			deployment, err := f.client.GetDeployment(context.Background(), f.namespace, "kube-state-metrics")
+			if err != nil {
+				return nil, err
+			}
+			deployment.Annotations[annotationKSMCRSConfigEdit] = time.Now().Format(time.RFC3339)
+			err = f.client.UpdateDeployment(context.Background(), deployment)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			return nil, err
 		}
