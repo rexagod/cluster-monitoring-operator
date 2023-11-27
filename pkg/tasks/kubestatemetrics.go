@@ -35,16 +35,6 @@ func NewKubeStateMetricsTask(client *client.Client, factory *manifests.Factory) 
 }
 
 func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
-	cm, err := t.factory.KubeStateMetricsCRSConfigMap()
-	if err != nil {
-		return errors.Wrap(err, "initializing kube-state-metrics custom-resource-state ConfigMap failed")
-	}
-
-	err = t.client.CreateOrUpdateConfigMap(ctx, cm)
-	if err != nil {
-		return errors.Wrap(err, "reconciling kube-state-metrics custom-resource-state ConfigMap failed")
-	}
-
 	sa, err := t.factory.KubeStateMetricsServiceAccount()
 	if err != nil {
 		return errors.Wrap(err, "initializing kube-state-metrics Service failed")
@@ -123,6 +113,16 @@ func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrapf(err, "reconciling %s/%s ServiceMonitor failed", sm.Namespace, sm.Name)
 		}
+	}
+
+	cm, err := t.factory.KubeStateMetricsCRSConfigMap()
+	if err != nil {
+		return errors.Wrap(err, "initializing kube-state-metrics custom-resource-state ConfigMap failed")
+	}
+
+	err = t.client.CreateOrUpdateKSMCRSConfigMap(ctx, cm)
+	if err != nil {
+		return errors.Wrap(err, "reconciling kube-state-metrics custom-resource-state ConfigMap failed")
 	}
 
 	return nil

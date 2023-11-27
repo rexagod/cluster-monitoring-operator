@@ -15,7 +15,6 @@
 package manifests
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -48,7 +47,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
@@ -76,9 +74,6 @@ const (
 
 	// --enable-feature=exemplar-storage: https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage
 	EnableFeatureExemplarStorageString = "exemplar-storage"
-	verticalPodAutoscalersGR           = "verticalpodautoscalers.autoscaling.k8s.io"
-
-	annotationKSMCRSConfigEdit = "custom-resource-state/last-controller-config-edit"
 )
 
 var (
@@ -829,41 +824,7 @@ func (f *Factory) KubeStateMetricsPrometheusRule() (*monv1.PrometheusRule, error
 }
 
 func (f *Factory) KubeStateMetricsCRSConfigMap() (*v1.ConfigMap, error) {
-	configmap, err := f.NewConfigMap(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
-	if err != nil {
-		return nil, err
-	}
-
-	// Check CRS prerequisites before enabling CRS metrics in CMO.
-	// Currently, the prerequisites are:
-	// * The presence of `VerticalPodAutoscaler` CRD in the cluster: `KubeStateMetricsListErrors` will be fired if absent.
-	_, err = f.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(context.Background(), verticalPodAutoscalersGR, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			i := strings.Index(KubeStateMetricsCRSConfig, "/")
-			if i == -1 {
-				return nil, fmt.Errorf("unable to extract kube-state-metrics' custom-resource-state configuration filename from %s", KubeStateMetricsCRSConfig)
-			}
-			crsConfig := KubeStateMetricsCRSConfig[i+1:]
-
-			// An empty custom-resource-state configuration file will crash KSM (for a non-empty `--custom-resource-state-config-file` flag value).
-			configmap.Data[crsConfig] = "kind: CustomResourceStateMetrics\n"
-
-			// TODO: Update KSM to trigger a restart, until we address the race issue on config-change-restarts upstream.
-			deployment, err := f.client.GetDeployment(context.Background(), f.namespace, "kube-state-metrics")
-			if err != nil {
-				return nil, err
-			}
-			deployment.Annotations[annotationKSMCRSConfigEdit] = time.Now().Format(time.RFC3339)
-			err = f.client.UpdateDeployment(context.Background(), deployment)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-	return configmap, nil
+	return f.NewConfigMap(f.assets.MustNewAssetReader(KubeStateMetricsCRSConfig))
 }
 
 func (f *Factory) OpenShiftStateMetricsClusterRoleBinding() (*rbacv1.ClusterRoleBinding, error) {

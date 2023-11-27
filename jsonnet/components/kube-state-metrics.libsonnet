@@ -44,7 +44,7 @@ function(params)
         {
           apiGroups: ['apiextensions.k8s.io'],
           resources: ['customresourcedefinitions'],
-          verbs: ['list', 'watch'],
+          verbs: ['get', 'list', 'watch'],
         },
       ],
     },
