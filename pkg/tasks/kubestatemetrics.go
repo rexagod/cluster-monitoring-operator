@@ -16,31 +16,29 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openshift/cluster-monitoring-operator/pkg/client"
 	"github.com/openshift/cluster-monitoring-operator/pkg/manifests"
 	"github.com/pkg/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
-	annotationKSMCRSConfigEdit = "custom-resource-state/last-controller-config-edit"
-	vpaGRString                = "verticalpodautoscalers.autoscaling.k8s.io"
+	enableCRSMetricsArg = "custom-resource-state-config-file"
+	crsConfigPath       = "/etc/kube-state-metrics/custom-resource-state-configmap.yaml"
 )
 
 type KubeStateMetricsTask struct {
-	client  *client.Client
-	factory *manifests.Factory
+	client           *client.Client
+	factory          *manifests.Factory
+	enableCRSMetrics bool
 }
 
-func NewKubeStateMetricsTask(client *client.Client, factory *manifests.Factory) *KubeStateMetricsTask {
+func NewKubeStateMetricsTask(client *client.Client, factory *manifests.Factory, enableCRSMetrics bool) *KubeStateMetricsTask {
 	return &KubeStateMetricsTask{
-		client:  client,
-		factory: factory,
+		client:           client,
+		factory:          factory,
+		enableCRSMetrics: enableCRSMetrics,
 	}
 }
 
@@ -100,24 +98,9 @@ func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
 		return errors.Wrap(err, "initializing kube-state-metrics custom-resource-state ConfigMap failed")
 	}
 
-	// Check CRS prerequisites before enabling CRS metrics in CMO.
-	// Currently, the prerequisites are:
-	// * The presence of `VerticalPodAutoscaler` CRD in the cluster: `KubeStateMetricsListErrors` will be fired if absent.
-	//   * If absent, modify the kube-state-metrics' custom-resource-state ConfigMap to disable CRS metrics.
-	crsConfigPath := manifests.KubeStateMetricsCRSConfig
-	_, err = t.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(context.Background(), vpaGRString, metav1.GetOptions{})
+	err = t.client.CreateOrUpdateConfigMap(ctx, cm)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			i := strings.Index(crsConfigPath, "/")
-			if i == -1 {
-				return fmt.Errorf("unable to extract configuration filename from %s", crsConfigPath)
-			}
-			crsConfigFile := crsConfigPath[i+1:]
-			// An empty custom-resource-state configuration file will crash KSM (for a non-empty `--custom-resource-state-config-file` flag value).
-			cm.Data[crsConfigFile] = "kind: CustomResourceStateMetrics\n" // Empty kube-state-metrics' custom-resource-state configuration blob.
-			return nil
-		}
-		return err
+		return errors.Wrapf(err, "reconciling %s/%s ConfigMap failed", cm.Namespace, cm.Name)
 	}
 
 	dep, err := t.factory.KubeStateMetricsDeployment()
@@ -125,20 +108,38 @@ func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
 		return errors.Wrap(err, "initializing kube-state-metrics Deployment failed")
 	}
 
-	// If the kube-state-metrics' custom-resource-state ConfigMap has been modified, update the kube-state-metrics Deployment's annotations to trigger a rolling update.
-	// TODO: This is a workaround to avoid a certain race condition upstream that crashes KSM whenever a configuration change is detected and causes the binary to reload.
-	gotConfigMap, err := t.client.GetConfigmap(ctx, cm.Namespace, cm.Name)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return errors.Wrapf(err, "getting %s/%s ConfigMap failed", cm.Namespace, cm.Name)
+	// Check if custom-resource-state metrics have been enabled.
+	// * If so, add the --custom-resource-state-config-file flag to the kube-state-metrics container, if it is absent.
+	// * If not, remove the --custom-resource-state-config-file flag from the kube-state-metrics container, if it is present.
+	// This will, in turn, also cause the kube-state-metrics container to be restarted with the new set of flags in effect.
+	if t.enableCRSMetrics {
+		for _, container := range dep.Spec.Template.Spec.Containers {
+			if container.Name == "kube-state-metrics" {
+				crsEnabled := false
+				for _, arg := range container.Args {
+					if strings.Contains(arg, enableCRSMetricsArg) {
+						crsEnabled = true
+						break
+					}
+				}
+				if !crsEnabled {
+					container.Args = append(container.Args, "--"+enableCRSMetricsArg+"="+crsConfigPath)
+				}
+				break
+			}
 		}
-	} else if gotConfigMap.Data[crsConfigPath] != cm.Data[crsConfigPath] {
-		dep.Annotations[annotationKSMCRSConfigEdit] = time.Now().Format(time.RFC3339)
-	}
-
-	err = t.client.CreateOrUpdateConfigMap(ctx, cm)
-	if err != nil {
-		return errors.Wrap(err, "reconciling kube-state-metrics custom-resource-state ConfigMap failed")
+	} else {
+		for _, container := range dep.Spec.Template.Spec.Containers {
+			if container.Name == "kube-state-metrics" {
+				for i, arg := range container.Args {
+					if strings.Contains(arg, enableCRSMetricsArg) {
+						container.Args = append(container.Args[:i], container.Args[i+1:]...)
+						break
+					}
+				}
+				break
+			}
+		}
 	}
 
 	err = t.client.CreateOrUpdateDeployment(ctx, dep)

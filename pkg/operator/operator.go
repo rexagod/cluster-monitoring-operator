@@ -36,6 +36,7 @@ import (
 	"github.com/pkg/errors"
 	certapiv1 "k8s.io/api/certificates/v1"
 	v1 "k8s.io/api/core/v1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -405,6 +406,20 @@ func New(
 	}
 	o.informers = append(o.informers, informer)
 
+	informer = cache.NewSharedIndexInformer(
+		o.client.VerticalPodAutoscalerCRDListWatch(ctx),
+		&apiextv1.CustomResourceDefinition{}, resyncPeriod, cache.Indexers{},
+	)
+	_, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    o.handleEvent,
+		UpdateFunc: func(_, newObj interface{}) { o.handleEvent(newObj) },
+		DeleteFunc: o.handleEvent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	o.informers = append(o.informers, informer)
+
 	kubeInformersOperatorNS := informers.NewSharedInformerFactoryWithOptions(
 		c.KubernetesInterface(),
 		resyncPeriod,
@@ -584,7 +599,10 @@ func (o *Operator) handleEvent(obj interface{}) {
 		*configv1.APIServer,
 		*configv1.Console,
 		*configv1.ClusterOperator,
-		*configv1.ClusterVersion:
+		*configv1.ClusterVersion,
+		// Currently, the CRDs that trigger reconciliation are:
+		// * verticalpodautoscalers.autoscaling.k8s.io
+		*apiextv1.CustomResourceDefinition:
 		// Log GroupKind and Name of the obj
 		rtObj := obj.(k8sruntime.Object)
 		gk := rtObj.GetObjectKind().GroupVersionKind().GroupKind()
@@ -598,11 +616,12 @@ func (o *Operator) handleEvent(obj interface{}) {
 		if objKind == "" {
 			objKind = fmt.Sprintf("%T", obj)
 		}
-		klog.Infof("Triggering an update due to a change in %s - %s", objKind, name)
+		klog.Infof("Triggering an update due to a change in %s/%s", objKind, name)
 		o.enqueue(cmoConfigMap)
 		return
 	}
 
+	// key represents the "namespace/name" of the object.
 	key, ok := o.keyFunc(obj)
 	if !ok {
 		return
@@ -728,6 +747,20 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 		klog.Warningf("Fail to load ConsoleConfig, AlertManager's externalURL may be outdated")
 	}
 
+	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
+	enableKSMCRSMetrics := false
+	_, err = o.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, client.VerticalPodAutoscalerGRString, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Warningf("%s CRD not found, kube-state-metrics' custom-resource-state-based metrics will be disabled", client.VerticalPodAutoscalerGRString)
+		} else {
+			klog.Errorf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerGRString)
+		}
+	} else {
+		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerGRString)
+		enableKSMCRSMetrics = true
+	}
+
 	factory := manifests.NewFactory(
 		o.namespace,
 		o.namespaceUserWorkload,
@@ -737,7 +770,6 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 		o.assets,
 		apiServerConfig,
 		consoleConfig,
-		o.client,
 	)
 
 	tl := tasks.NewTaskRunner(
@@ -757,7 +789,7 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 				newTaskSpec("Prometheus", tasks.NewPrometheusTask(o.client, factory, config)),
 				newTaskSpec("Alertmanager", tasks.NewAlertmanagerTask(o.client, factory, config)),
 				newTaskSpec("NodeExporter", tasks.NewNodeExporterTask(o.client, factory)),
-				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory)),
+				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory, enableKSMCRSMetrics)),
 				newTaskSpec("OpenshiftStateMetrics", tasks.NewOpenShiftStateMetricsTask(o.client, factory)),
 				newTaskSpec("PrometheusAdapter", tasks.NewPrometheusAdapterTask(ctx, o.namespace, o.client, !o.metricsServerEnabled, factory, config)),
 				newTaskSpec("MetricsServer", tasks.NewMetricsServerTask(ctx, o.namespace, o.client, o.metricsServerEnabled, factory, config)),

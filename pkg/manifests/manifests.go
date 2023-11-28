@@ -34,7 +34,6 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
-	"github.com/openshift/cluster-monitoring-operator/pkg/client"
 	"github.com/openshift/cluster-monitoring-operator/pkg/promqlgen"
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/pkg/errors"
@@ -354,7 +353,6 @@ type Factory struct {
 	assets                *Assets
 	APIServerConfig       *APIServerConfig
 	consoleConfig         *configv1.Console
-	client                *client.Client
 }
 
 // InfrastructureReader has methods to describe the cluster infrastructure.
@@ -378,7 +376,6 @@ func NewFactory(
 	a *Assets,
 	apiServerConfig *APIServerConfig,
 	consoleConfig *configv1.Console,
-	client *client.Client,
 ) *Factory {
 	return &Factory{
 		namespace:             namespace,
@@ -389,7 +386,6 @@ func NewFactory(
 		assets:                a,
 		APIServerConfig:       apiServerConfig,
 		consoleConfig:         consoleConfig,
-		client:                client,
 	}
 }
 

@@ -3,6 +3,7 @@
 ## 4.15
 
 - [#2161](https://github.com/openshift/cluster-monitoring-operator/pull/2161) Add `PrometheusRestrictedConfig.RemoteWrite[].SendExemplars`.
+- [#2078](https://github.com/openshift/cluster-monitoring-operator/pull/2078) Support exporting VPA metrics from KSM.
 
 ## 4.14
 
@@ -12,7 +13,6 @@
 - [#1963](https://github.com/openshift/cluster-monitoring-operator/pull/1963) Add nodeExporter settings for network devices list.
 - [#2049](https://github.com/openshift/cluster-monitoring-operator/pull/2049) Remove Kube*QuotaOvercommit alerts.
 - [#2067](https://github.com/openshift/cluster-monitoring-operator/pull/2067) Add options to specify resource requests and limits for all components.
-- [#2078](https://github.com/openshift/cluster-monitoring-operator/pull/2078) Support exporting VPA metrics from KSM.
 
 ## 4.13
 
