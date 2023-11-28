@@ -68,12 +68,10 @@ import (
 )
 
 const (
-	deploymentCreateTimeout    = 5 * time.Minute
-	deploymentDeleteTimeout    = 5 * time.Minute
-	metadataPrefix             = "monitoring.openshift.io/"
-	clusterConsole             = "cluster"
-	vpaGRString                = "verticalpodautoscalers.autoscaling.k8s.io"
-	annotationKSMCRSConfigEdit = "custom-resource-state/last-controller-config-edit"
+	deploymentCreateTimeout = 5 * time.Minute
+	deploymentDeleteTimeout = 5 * time.Minute
+	metadataPrefix          = "monitoring.openshift.io/"
+	clusterConsole          = "cluster"
 )
 
 type Client struct {
@@ -1517,54 +1515,6 @@ func (c *Client) CreateOrUpdateConfigMap(ctx context.Context, cm *v1.ConfigMap) 
 
 	_, err = cmClient.Update(ctx, required, metav1.UpdateOptions{})
 	return errors.Wrap(err, "updating ConfigMap object failed")
-}
-
-func (c *Client) CreateOrUpdateKSMCRSConfigMap(ctx context.Context, cm *v1.ConfigMap) error {
-	// crsConfigFile defines the configuration for kube-state-metrics' custom-resource-state feature-set.
-	crsConfigFile := "custom-resource-state-configmap.yaml"
-	component := "kube-state-metrics"
-
-	// Check CRS prerequisites before enabling CRS metrics in CMO.
-	// Currently, the prerequisites are:
-	// * The presence of `VerticalPodAutoscaler` CRD in the cluster: `KubeStateMetricsListErrors` will be fired if absent.
-	_, err := c.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(context.Background(), vpaGRString, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// An empty custom-resource-state configuration file will crash KSM (for a non-empty `--custom-resource-state-config-file` flag value).
-			cm.Data[crsConfigFile] = "kind: CustomResourceStateMetrics\n"
-			err = c.CreateOrUpdateConfigMap(ctx, cm)
-			if err != nil {
-				return err
-			}
-			// TODO: Update KSM to trigger a restart, until we address the race issue on config-change-restarts upstream.
-			err = c.WaitForDeploymentRollout(ctx, &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      component,
-					Namespace: c.namespace,
-				},
-			})
-			if err != nil {
-				return err
-			}
-			deployment, err := c.kclient.AppsV1().Deployments(c.namespace).Get(ctx, component, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			deployment.Annotations[annotationKSMCRSConfigEdit] = time.Now().Format(time.RFC3339)
-			err = c.UpdateDeployment(context.Background(), deployment)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-		return err
-	}
-	err = c.CreateOrUpdateConfigMap(ctx, cm)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (c *Client) DeleteIfExists(ctx context.Context, nsName string) error {
