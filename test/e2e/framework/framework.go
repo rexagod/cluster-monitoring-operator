@@ -162,7 +162,16 @@ func New(kubeConfigPath string) (*Framework, CleanUpFunc, error) {
 		kubeConfigPath:            kubeConfigPath,
 		SchedulingClient:          schedulingClient,
 		OpenShiftMonitoringClient: osmclient,
-		ManifestsFactory:          manifests.NewFactory(namespaceName, userWorkloadNamespaceName, nil, nil, nil, manifests.NewAssets("../../assets"), &manifests.APIServerConfig{}, &configv1.Console{}),
+		ManifestsFactory: manifests.NewFactory(
+			namespaceName,
+			userWorkloadNamespaceName,
+			nil,
+			nil,
+			nil,
+			manifests.NewAssets("../../assets"),
+			&manifests.APIServerConfig{},
+			&configv1.Console{},
+		),
 	}
 
 	cleanUp, err := f.setup()

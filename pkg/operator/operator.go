@@ -749,15 +749,15 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 
 	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
 	enableKSMCRSMetrics := false
-	_, err = o.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, client.VerticalPodAutoscalerGRString, metav1.GetOptions{})
+	_, err = o.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, client.VerticalPodAutoscalerCRDMetadataName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Warningf("%s CRD not found, kube-state-metrics' custom-resource-state-based metrics will be disabled", client.VerticalPodAutoscalerGRString)
+			klog.Warningf("%s CRD not found, kube-state-metrics' custom-resource-state-based metrics will be disabled", client.VerticalPodAutoscalerCRDMetadataName)
 		} else {
-			klog.Errorf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerGRString)
+			klog.Errorf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerCRDMetadataName)
 		}
 	} else {
-		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerGRString)
+		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerCRDMetadataName)
 		enableKSMCRSMetrics = true
 	}
 

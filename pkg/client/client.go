@@ -68,11 +68,11 @@ import (
 )
 
 const (
-	deploymentCreateTimeout       = 5 * time.Minute
-	deploymentDeleteTimeout       = 5 * time.Minute
-	metadataPrefix                = "monitoring.openshift.io/"
-	clusterConsole                = "cluster"
-	VerticalPodAutoscalerGRString = "verticalpodautoscalers.autoscaling.k8s.io"
+	deploymentCreateTimeout              = 5 * time.Minute
+	deploymentDeleteTimeout              = 5 * time.Minute
+	metadataPrefix                       = "monitoring.openshift.io/"
+	clusterConsole                       = "cluster"
+	VerticalPodAutoscalerCRDMetadataName = "verticalpodautoscalers.autoscaling.k8s.io"
 )
 
 type Client struct {
@@ -427,12 +427,12 @@ func (c *Client) VerticalPodAutoscalerCRDListWatch(ctx context.Context) *cache.L
 	return &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			return c.eclient.ApiextensionsV1().CustomResourceDefinitions().List(ctx, metav1.ListOptions{
-				FieldSelector: fields.OneTermEqualSelector("metadata.name", VerticalPodAutoscalerGRString).String(),
+				FieldSelector: fields.OneTermEqualSelector("metadata.name", VerticalPodAutoscalerCRDMetadataName).String(),
 			})
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			return c.eclient.ApiextensionsV1().CustomResourceDefinitions().Watch(ctx, metav1.ListOptions{
-				FieldSelector: fields.OneTermEqualSelector("metadata.name", VerticalPodAutoscalerGRString).String(),
+				FieldSelector: fields.OneTermEqualSelector("metadata.name", VerticalPodAutoscalerCRDMetadataName).String(),
 			})
 		},
 	}
