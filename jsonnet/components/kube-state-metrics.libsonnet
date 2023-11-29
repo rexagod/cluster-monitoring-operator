@@ -233,7 +233,6 @@ function(params)
                           ^kube_.+_annotations$
                         |||,
                         '--metric-labels-allowlist=pods=[*],nodes=[*],namespaces=[*],persistentvolumes=[*],persistentvolumeclaims=[*],poddisruptionbudgets=[*]',
-                        '--custom-resource-state-config-file=/etc/kube-state-metrics/custom-resource-state-configmap.yaml',
                       ],
                       securityContext: {},
                       resources: {

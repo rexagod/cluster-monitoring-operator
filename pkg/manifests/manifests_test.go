@@ -271,7 +271,7 @@ func TestUnconfiguredManifests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = f.KubeStateMetricsDeployment()
+	_, err = f.KubeStateMetricsDeployment(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3497,13 +3497,14 @@ func TestKubeStateMetrics(t *testing.T) {
 
 	f := NewFactory("openshift-monitoring", "openshift-user-workload-monitoring", c, defaultInfrastructureReader(), &fakeProxyReader{}, NewAssets(assetsPath), &APIServerConfig{}, &configv1.Console{})
 
-	d, err := f.KubeStateMetricsDeployment()
+	d, err := f.KubeStateMetricsDeployment(true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	kubeRbacProxyTLSCipherSuitesArg := ""
 	kubeRbacProxyMinTLSVersionArg := ""
+	gotKubeStateMetricsCustomResourceStateConfigFile := ""
 	for _, container := range d.Spec.Template.Spec.Containers {
 		switch container.Name {
 		case "kube-state-metrics":
@@ -3513,6 +3514,8 @@ func TestKubeStateMetrics(t *testing.T) {
 			if !reflect.DeepEqual(container.Resources, *f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.Resources) {
 				t.Fatal("kube-state-metrics resources incorrectly configured")
 			}
+
+			gotKubeStateMetricsCustomResourceStateConfigFile = getContainerArgValue(d.Spec.Template.Spec.Containers, kubeStateMetricsCustomResourceStateConfigFileFlag, container.Name)
 		case "kube-rbac-proxy-self", "kube-rbac-proxy-main":
 			if container.Image != "docker.io/openshift/origin-kube-rbac-proxy:latest" {
 				t.Fatalf("%s image incorrectly configured", container.Name)
@@ -3545,13 +3548,32 @@ func TestKubeStateMetrics(t *testing.T) {
 		t.Fatal("kube-state-metrics topology spread contraints WhenUnsatisfiable not configured correctly")
 	}
 
-	d2, err := f.KubeStateMetricsDeployment()
+	if gotKubeStateMetricsCustomResourceStateConfigFile != kubeStateMetricsCustomResourceStateConfigFileFlag+kubeStateMetricsCustomResourceStateConfigFile {
+		t.Fatal("expected kube-state-metrics to enable custom-resource-state metrics")
+	}
+
+	d2, err := f.KubeStateMetricsDeployment(true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if !reflect.DeepEqual(d, d2) {
 		t.Fatal("expected KubeStateMetricsDeployment to be an idempotent function")
+	}
+
+	// At this point, we have checked if CRS flag is being appended if they have been enabled.
+	// However, since the original manifest does not include this flag, we will use a deployment that
+	// already includes this flag as a result of the previous check, disable CRS metrics, and check
+	// for the flag's absence.
+	enableOrDisableCRSMetrics(d2, false)
+
+	for _, container := range d2.Spec.Template.Spec.Containers {
+		if container.Name == "kube-state-metrics" {
+			gotKubeStateMetricsCustomResourceStateConfigFile = getContainerArgValue(d2.Spec.Template.Spec.Containers, kubeStateMetricsCustomResourceStateConfigFileFlag, container.Name)
+			if gotKubeStateMetricsCustomResourceStateConfigFile != "" {
+				t.Fatal("expected kube-state-metrics to disable custom-resource-state metrics")
+			}
+		}
 	}
 }
 

@@ -16,16 +16,10 @@ package tasks
 
 import (
 	"context"
-	"strings"
 
 	"github.com/openshift/cluster-monitoring-operator/pkg/client"
 	"github.com/openshift/cluster-monitoring-operator/pkg/manifests"
 	"github.com/pkg/errors"
-)
-
-var (
-	enableCRSMetricsArg = "custom-resource-state-config-file"
-	crsConfigPath       = "/etc/kube-state-metrics/custom-resource-state-configmap.yaml"
 )
 
 type KubeStateMetricsTask struct {
@@ -103,43 +97,9 @@ func (t *KubeStateMetricsTask) Run(ctx context.Context) error {
 		return errors.Wrapf(err, "reconciling %s/%s ConfigMap failed", cm.Namespace, cm.Name)
 	}
 
-	dep, err := t.factory.KubeStateMetricsDeployment()
+	dep, err := t.factory.KubeStateMetricsDeployment(t.enableCRSMetrics)
 	if err != nil {
 		return errors.Wrap(err, "initializing kube-state-metrics Deployment failed")
-	}
-
-	// Check if custom-resource-state metrics have been enabled.
-	// * If so, add the --custom-resource-state-config-file flag to the kube-state-metrics container, if it is absent.
-	// * If not, remove the --custom-resource-state-config-file flag from the kube-state-metrics container, if it is present.
-	// This will, in turn, also cause the kube-state-metrics container to be restarted with the new set of flags in effect.
-	if t.enableCRSMetrics {
-		for _, container := range dep.Spec.Template.Spec.Containers {
-			if container.Name == "kube-state-metrics" {
-				crsEnabled := false
-				for _, arg := range container.Args {
-					if strings.Contains(arg, enableCRSMetricsArg) {
-						crsEnabled = true
-						break
-					}
-				}
-				if !crsEnabled {
-					container.Args = append(container.Args, "--"+enableCRSMetricsArg+"="+crsConfigPath)
-				}
-				break
-			}
-		}
-	} else {
-		for _, container := range dep.Spec.Template.Spec.Containers {
-			if container.Name == "kube-state-metrics" {
-				for i, arg := range container.Args {
-					if strings.Contains(arg, enableCRSMetricsArg) {
-						container.Args = append(container.Args[:i], container.Args[i+1:]...)
-						break
-					}
-				}
-				break
-			}
-		}
 	}
 
 	err = t.client.CreateOrUpdateDeployment(ctx, dep)
