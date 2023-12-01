@@ -812,7 +812,7 @@ func (f *Factory) KubeStateMetricsDeployment(enableCRSMetrics bool) (*appsv1.Dep
 					// care about its value.
 					if strings.HasPrefix(arg, kubeStateMetricsCustomResourceStateConfigFileFlag) {
 						d.Spec.Template.Spec.Containers[i].Args = append(container.Args[:argIndex], container.Args[argIndex+1:]...)
-						break
+						// Don't break, in the odd case of multiple occurrences of the flag.
 					}
 				}
 			}

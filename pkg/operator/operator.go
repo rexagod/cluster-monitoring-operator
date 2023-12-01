@@ -602,8 +602,8 @@ func (o *Operator) handleEvent(obj interface{}) {
 		*configv1.Console,
 		*configv1.ClusterOperator,
 		*configv1.ClusterVersion,
-	// Currently, the CRDs that trigger reconciliation are:
-	// * verticalpodautoscalers.autoscaling.k8s.io
+		// Currently, the CRDs that trigger reconciliation are:
+		// * verticalpodautoscalers.autoscaling.k8s.io
 		*apiextv1.CustomResourceDefinition:
 		// Log GroupKind and Name of the obj
 		rtObj := obj.(k8sruntime.Object)

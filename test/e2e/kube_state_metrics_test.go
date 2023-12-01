@@ -74,8 +74,11 @@ func TestKSMMetricsSuppression(t *testing.T) {
 }
 
 func TestKSMCRSMetrics(t *testing.T) {
+	assetsDir := "./assets/"
+	query := "kube_customresource_kube_verticalpodautoscaler_labels_info"
+
 	// Install a VPAv1 CRD.
-	manifest, err := f.ReadManifest("./assets/verticalpodautoscalers-v1-crd.yaml")
+	manifest, err := f.ReadManifest(assetsDir + "verticalpodautoscalers-v1-crd.yaml")
 	if err != nil {
 		t.Fatalf("failed to read VPA CRD manifest: %v", err)
 	}
@@ -105,23 +108,36 @@ func TestKSMCRSMetrics(t *testing.T) {
 	createVPACR(t, vpaCR)
 
 	// Fetch KSM CRS metrics.
-	err = framework.Poll(time.Second, time.Minute, func() error {
-		response, err := f.PrometheusK8sClient.PrometheusQueryWithStatus("kube_customresource_kube_verticalpodautoscaler_labels_info", 200)
-		if err != nil {
-			return err
-		}
-		if !strings.Contains(string(response), "foo") {
-			return errors.New(fmt.Sprintf("expected label 'foo' not found in response: %s", string(response)))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Errorf("failed to query Prometheus: %v", err)
-	}
+	fetchKSMCRSMetrics(t, false, query)
 
 	// Cleanup.
 	deleteVPACR(t, vpaCR)
 	deleteVPACRD(t, vpaCRD)
+
+	// Fetch KSM CRS metrics, but expect failure.
+	fetchKSMCRSMetrics(t, true, query)
+}
+
+func fetchKSMCRSMetrics(t *testing.T, shouldfail bool, query string) {
+	err := framework.Poll(time.Second, time.Minute, func() error {
+		response, err := f.PrometheusK8sClient.PrometheusQueryWithStatus(query, 200)
+		if err != nil {
+			return err
+		}
+		if shouldfail {
+			if strings.Contains(string(response), "foo") {
+				return errors.New(fmt.Sprintf("unexpected label 'foo' found in response: %s", string(response)))
+			}
+		} else {
+			if !strings.Contains(string(response), "foo") {
+				return errors.New(fmt.Sprintf("expected label 'foo' not found in response: %s", string(response)))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to query Prometheus: %v", err)
+	}
 }
 
 func createVPACR(t *testing.T, vpaCR *vpav1.VerticalPodAutoscaler) {
