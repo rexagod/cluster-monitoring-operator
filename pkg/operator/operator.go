@@ -189,6 +189,8 @@ type Operator struct {
 
 	ruleController    *alert.RuleController
 	relabelController *alert.RelabelConfigController
+
+	lastKnownEnableKSMCRSMetricsState bool
 }
 
 func New(
@@ -410,6 +412,7 @@ func New(
 		o.client.VerticalPodAutoscalerCRDListWatch(ctx),
 		&apiextv1.CustomResourceDefinition{}, resyncPeriod, cache.Indexers{},
 	)
+	// Only trigger reconciliation on the addition or removal of VPA CRDs.
 	_, err = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    o.handleEvent,
 		DeleteFunc: o.handleEvent,
@@ -599,8 +602,8 @@ func (o *Operator) handleEvent(obj interface{}) {
 		*configv1.Console,
 		*configv1.ClusterOperator,
 		*configv1.ClusterVersion,
-		// Currently, the CRDs that trigger reconciliation are:
-		// * verticalpodautoscalers.autoscaling.k8s.io
+	// Currently, the CRDs that trigger reconciliation are:
+	// * verticalpodautoscalers.autoscaling.k8s.io
 		*apiextv1.CustomResourceDefinition:
 		// Log GroupKind and Name of the obj
 		rtObj := obj.(k8sruntime.Object)
@@ -752,11 +755,17 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			klog.Warningf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerCRDMetadataName)
+		} else {
+			// Fallback to last known state of CRS metrics generation.
+			enableKSMCRSMetrics = o.lastKnownEnableKSMCRSMetricsState
 		}
 	} else {
 		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerCRDMetadataName)
 		enableKSMCRSMetrics = true
 	}
+
+	// Record the last known state for enableKSMCRSMetrics.
+	o.lastKnownEnableKSMCRSMetricsState = enableKSMCRSMetrics
 
 	factory := manifests.NewFactory(
 		o.namespace,

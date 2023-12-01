@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -41,6 +42,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	vpaclient "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/kubernetes"
 	admissionclient "k8s.io/client-go/kubernetes/typed/admissionregistration/v1"
 	schedulingv1client "k8s.io/client-go/kubernetes/typed/scheduling/v1"
@@ -70,6 +72,8 @@ type Framework struct {
 	AdmissionClient       *admissionclient.AdmissionregistrationV1Client
 	MetricsClient         *metricsclient.Clientset
 	SchedulingClient      *schedulingv1client.SchedulingV1Client
+	APIExtensionsClient   *apiextensionsclient.Clientset
+	VPAClient             *vpaclient.AutoscalingV1Client
 	kubeConfigPath        string
 
 	OpenShiftMonitoringClient    openshiftmonitoringclientset.Interface
@@ -141,9 +145,19 @@ func New(kubeConfigPath string) (*Framework, CleanUpFunc, error) {
 		return nil, nil, errors.Wrap(err, "creating scheduling v1 client failed")
 	}
 
-	osmclient, err := openshiftmonitoringclientset.NewForConfig(config)
+	osmClient, err := openshiftmonitoringclientset.NewForConfig(config)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "creating openshift monitoring client")
+	}
+
+	apiExtensionsClient, err := apiextensionsclient.NewForConfig(config)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "creating apiextensions client")
+	}
+
+	vpaClient, err := vpaclient.NewForConfig(config)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "creating vpa client")
 	}
 
 	f := &Framework{
@@ -161,7 +175,9 @@ func New(kubeConfigPath string) (*Framework, CleanUpFunc, error) {
 		UserWorkloadMonitoringNs:  userWorkloadNamespaceName,
 		kubeConfigPath:            kubeConfigPath,
 		SchedulingClient:          schedulingClient,
-		OpenShiftMonitoringClient: osmclient,
+		OpenShiftMonitoringClient: osmClient,
+		APIExtensionsClient:       apiExtensionsClient,
+		VPAClient:                 vpaClient,
 		ManifestsFactory: manifests.NewFactory(
 			namespaceName,
 			userWorkloadNamespaceName,

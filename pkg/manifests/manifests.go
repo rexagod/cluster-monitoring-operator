@@ -773,49 +773,8 @@ func (f *Factory) KubeStateMetricsMinimalServiceMonitor() (*monv1.ServiceMonitor
 	return f.NewServiceMonitor(f.assets.MustNewAssetReader(KubeStateMetricsMinimalServiceMonitor))
 }
 
-// Check if custom-resource-state metrics have been enabled.
-// * If so, add the --custom-resource-state-config-file flag to the kube-state-metrics container, if it is absent.
-// * If not, remove the --custom-resource-state-config-file flag from the kube-state-metrics container, if it is present.
-// This will, in turn, also cause the kube-state-metrics container to be restarted with the new set of flags in effect.
-func enableOrDisableCRSMetrics(d *appsv1.Deployment, enableCRSMetrics bool) {
-	flagCRSConfigFile := kubeStateMetricsCustomResourceStateConfigFileFlag + kubeStateMetricsCustomResourceStateConfigFile
-	if enableCRSMetrics {
-		for containerIndex, container := range d.Spec.Template.Spec.Containers {
-			if container.Name == "kube-state-metrics" {
-				crsEnabled := false
-				for _, arg := range container.Args {
-					// The definition of "enabled" in this context is that the flag is present and has the exact same
-					// value as the one set by the operator.
-					if arg == flagCRSConfigFile {
-						crsEnabled = true
-						break
-					}
-				}
-				if !crsEnabled {
-					d.Spec.Template.Spec.Containers[containerIndex].Args = append(container.Args, flagCRSConfigFile)
-				}
-				break
-			}
-		}
-	} else {
-		for containerIndex, container := range d.Spec.Template.Spec.Containers {
-			if container.Name == "kube-state-metrics" {
-				for argIndex, arg := range container.Args {
-					// The definition of "disabled" in this context is that the flag itself must be absent. We do not
-					// care about its value.
-					if strings.HasPrefix(arg, kubeStateMetricsCustomResourceStateConfigFileFlag) {
-						x := append(container.Args[:argIndex], container.Args[argIndex+1:]...)
-						d.Spec.Template.Spec.Containers[containerIndex].Args = x
-						break
-					}
-				}
-				break
-			}
-		}
-	}
-}
-
 func (f *Factory) KubeStateMetricsDeployment(enableCRSMetrics bool) (*appsv1.Deployment, error) {
+	flagCRSConfigFile := kubeStateMetricsCustomResourceStateConfigFileFlag + kubeStateMetricsCustomResourceStateConfigFile
 	d, err := f.NewDeployment(f.assets.MustNewAssetReader(KubeStateMetricsDeployment))
 	if err != nil {
 		return nil, err
@@ -829,6 +788,33 @@ func (f *Factory) KubeStateMetricsDeployment(enableCRSMetrics bool) (*appsv1.Dep
 			d.Spec.Template.Spec.Containers[i].Image = f.config.Images.KubeStateMetrics
 			if f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.Resources != nil {
 				d.Spec.Template.Spec.Containers[i].Resources = *f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.Resources
+			}
+			// Check if custom-resource-state metrics have been enabled.
+			// * If so, add the --custom-resource-state-config-file flag to the kube-state-metrics container, if it is absent.
+			// * If not, remove the --custom-resource-state-config-file flag from the kube-state-metrics container, if it is present.
+			// This will, in turn, also cause the kube-state-metrics container to be restarted with the new set of flags in effect.
+			if enableCRSMetrics {
+				crsEnabled := false
+				for _, arg := range container.Args {
+					// The definition of "enabled" in this context is that the flag is present and has the exact same
+					// value as the one set by the operator.
+					if arg == flagCRSConfigFile {
+						crsEnabled = true
+						break
+					}
+				}
+				if !crsEnabled {
+					d.Spec.Template.Spec.Containers[i].Args = append(container.Args, flagCRSConfigFile)
+				}
+			} else {
+				for argIndex, arg := range container.Args {
+					// The definition of "disabled" in this context is that the flag itself must be absent. We do not
+					// care about its value.
+					if strings.HasPrefix(arg, kubeStateMetricsCustomResourceStateConfigFileFlag) {
+						d.Spec.Template.Spec.Containers[i].Args = append(container.Args[:argIndex], container.Args[argIndex+1:]...)
+						break
+					}
+				}
 			}
 		}
 	}
@@ -844,8 +830,6 @@ func (f *Factory) KubeStateMetricsDeployment(enableCRSMetrics bool) (*appsv1.Dep
 	if len(f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.TopologySpreadConstraints) > 0 {
 		d.Spec.Template.Spec.TopologySpreadConstraints = f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.TopologySpreadConstraints
 	}
-
-	enableOrDisableCRSMetrics(d, enableCRSMetrics)
 
 	return d, nil
 }

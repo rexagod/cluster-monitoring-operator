@@ -3560,21 +3560,6 @@ func TestKubeStateMetrics(t *testing.T) {
 	if !reflect.DeepEqual(d, d2) {
 		t.Fatal("expected KubeStateMetricsDeployment to be an idempotent function")
 	}
-
-	// At this point, we have checked if CRS flag is being appended if they have been enabled.
-	// However, since the original manifest does not include this flag, we will use a deployment that
-	// already includes this flag as a result of the previous check, disable CRS metrics, and check
-	// for the flag's absence.
-	enableOrDisableCRSMetrics(d2, false)
-
-	for _, container := range d2.Spec.Template.Spec.Containers {
-		if container.Name == "kube-state-metrics" {
-			gotKubeStateMetricsCustomResourceStateConfigFile = getContainerArgValue(d2.Spec.Template.Spec.Containers, kubeStateMetricsCustomResourceStateConfigFileFlag, container.Name)
-			if gotKubeStateMetricsCustomResourceStateConfigFile != "" {
-				t.Fatal("expected kube-state-metrics to disable custom-resource-state metrics")
-			}
-		}
-	}
 }
 
 func TestOpenShiftStateMetrics(t *testing.T) {
