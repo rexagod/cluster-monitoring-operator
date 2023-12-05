@@ -1893,24 +1893,17 @@ func (c *Client) RegisterConsolePlugin(ctx context.Context, name string) error {
 	return errors.Wrapf(err, "registering console-plugin %q with console %q failed", name, clusterConsole)
 }
 
-// ShouldEnableKSMCRSMetrics checks if kube-state-metrics' custom-resource-state-based metrics generation should be enabled.
-func (c *Client) ShouldEnableKSMCRSMetrics(ctx context.Context, lastKnownEnableKSMCRSMetricsState bool) bool {
-	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
-	enableKSMCRSMetrics := false
+// VPACustomResourceDefinitionPresent checks if VerticalPodAutoscaler CRD is present in the cluster.
+func (c *Client) VPACustomResourceDefinitionPresent(ctx context.Context) (bool, error) {
 	_, err := c.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, VerticalPodAutoscalerCRDMetadataName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Warningf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", VerticalPodAutoscalerCRDMetadataName)
-		} else {
-			// Fallback to last known state of CRS metrics generation.
-			enableKSMCRSMetrics = lastKnownEnableKSMCRSMetricsState
+			return false, nil
 		}
-	} else {
-		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", VerticalPodAutoscalerCRDMetadataName)
-		enableKSMCRSMetrics = true
+		return false, errors.Wrapf(err, "failed to get %s CRD", VerticalPodAutoscalerCRDMetadataName)
 	}
 
-	return enableKSMCRSMetrics
+	return true, nil
 }
 
 // mergeMetadata merges labels and annotations from `existing` map into `required` one where `required` has precedence

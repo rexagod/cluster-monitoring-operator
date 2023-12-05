@@ -190,7 +190,7 @@ type Operator struct {
 	ruleController    *alert.RuleController
 	relabelController *alert.RelabelConfigController
 
-	lastKnownEnableKSMCRSMetricsState bool
+	lastKnownVPACustomResourceDefinitionPresent bool
 }
 
 func New(
@@ -750,7 +750,19 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 	}
 
 	// Record the last known state for enableKSMCRSMetrics.
-	o.lastKnownEnableKSMCRSMetricsState = o.client.ShouldEnableKSMCRSMetrics(ctx, o.lastKnownEnableKSMCRSMetricsState)
+	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
+	enableKSMCRSMetrics := false
+	isVPACRDPresent, err := o.client.VPACustomResourceDefinitionPresent(ctx)
+	if !isVPACRDPresent {
+		if err != nil {
+			klog.V(4).Infof("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerCRDMetadataName)
+			enableKSMCRSMetrics = o.lastKnownVPACustomResourceDefinitionPresent
+		}
+	} else {
+		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerCRDMetadataName)
+		enableKSMCRSMetrics = true
+	}
+	o.lastKnownVPACustomResourceDefinitionPresent = enableKSMCRSMetrics
 
 	factory := manifests.NewFactory(
 		o.namespace,
@@ -780,7 +792,7 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 				newTaskSpec("Prometheus", tasks.NewPrometheusTask(o.client, factory, config)),
 				newTaskSpec("Alertmanager", tasks.NewAlertmanagerTask(o.client, factory, config)),
 				newTaskSpec("NodeExporter", tasks.NewNodeExporterTask(o.client, factory)),
-				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory, o.lastKnownEnableKSMCRSMetricsState)),
+				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory, o.lastKnownVPACustomResourceDefinitionPresent)),
 				newTaskSpec("OpenshiftStateMetrics", tasks.NewOpenShiftStateMetricsTask(o.client, factory)),
 				newTaskSpec("PrometheusAdapter", tasks.NewPrometheusAdapterTask(ctx, o.namespace, o.client, !o.metricsServerEnabled, factory, config)),
 				newTaskSpec("MetricsServer", tasks.NewMetricsServerTask(ctx, o.namespace, o.client, o.metricsServerEnabled, factory, config)),

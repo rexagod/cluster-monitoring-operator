@@ -247,6 +247,7 @@ function(params)
                           name: tmpVolumeName,
                           readOnly: false,
                         },
+                        // The custom resource state configmap is always mounted in the kube-state-metrics container and only when the VPA CRD is installed, CMO will add `--custom-resource-state-config-file` to the container arguments list.
                         {
                           mountPath: '/etc/kube-state-metrics',
                           name: crsVolumeName,

@@ -79,8 +79,8 @@ func TestKSMCRSMetrics(t *testing.T) {
 	queryPresenceCheck := "group(kube_customresource_kube_verticalpodautoscaler_labels_info{" + customLabelKey + "=\"" + customLabelValue + "\"} == 1)"
 	queryAbsenceCheck := "absent(kube_customresource_kube_verticalpodautoscaler_labels_info)"
 
-	// Fetch KSM CRS metrics, but expect failure.
-	fetchKSMCRSMetrics(t, queryAbsenceCheck)
+	// Fetch KSM CRS metrics, but expect absence.
+	f.ThanosQuerierClient.WaitForQueryReturnOne(t, time.Minute, queryAbsenceCheck)
 
 	// Install a VPAv1 CRD.
 	manifest, err := f.ReadManifest(path.Join(assetsDir, "verticalpodautoscalers-v1-crd.yaml"))
@@ -113,17 +113,13 @@ func TestKSMCRSMetrics(t *testing.T) {
 	createVPACR(t, vpaCR)
 
 	// Fetch KSM CRS metrics.
-	fetchKSMCRSMetrics(t, queryPresenceCheck)
+	f.ThanosQuerierClient.WaitForQueryReturnOne(t, time.Minute, queryPresenceCheck)
 
 	// Cleanup.
 	deleteVPACRD(t, vpaCRD)
 
-	// Fetch KSM CRS metrics, but expect failure.
-	fetchKSMCRSMetrics(t, queryAbsenceCheck)
-}
-
-func fetchKSMCRSMetrics(t *testing.T, query string) {
-	f.ThanosQuerierClient.WaitForQueryReturnOne(t, time.Minute, query)
+	// Fetch KSM CRS metrics, but expect absence.
+	f.ThanosQuerierClient.WaitForQueryReturnOne(t, time.Minute, queryAbsenceCheck)
 }
 
 func createVPACR(t *testing.T, vpaCR *vpav1.VerticalPodAutoscaler) {

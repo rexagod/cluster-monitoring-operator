@@ -790,31 +790,8 @@ func (f *Factory) KubeStateMetricsDeployment(enableCRSMetrics bool) (*appsv1.Dep
 				d.Spec.Template.Spec.Containers[i].Resources = *f.config.ClusterMonitoringConfiguration.KubeStateMetricsConfig.Resources
 			}
 			// Check if custom-resource-state metrics have been enabled.
-			// * If so, add the --custom-resource-state-config-file flag to the kube-state-metrics container, if it is absent.
-			// * If not, remove the --custom-resource-state-config-file flag from the kube-state-metrics container, if it is present.
-			// This will, in turn, also cause the kube-state-metrics container to be restarted with the new set of flags in effect.
 			if enableCRSMetrics {
-				crsEnabled := false
-				for _, arg := range container.Args {
-					// The definition of "enabled" in this context is that the flag is present and has the exact same
-					// value as the one set by the operator.
-					if arg == flagCRSConfigFile {
-						crsEnabled = true
-						break
-					}
-				}
-				if !crsEnabled {
-					d.Spec.Template.Spec.Containers[i].Args = append(container.Args, flagCRSConfigFile)
-				}
-			} else {
-				for argIndex, arg := range container.Args {
-					// The definition of "disabled" in this context is that the flag itself must be absent. We do not
-					// care about its value.
-					if strings.HasPrefix(arg, kubeStateMetricsCustomResourceStateConfigFileFlag) {
-						d.Spec.Template.Spec.Containers[i].Args = append(container.Args[:argIndex], container.Args[argIndex+1:]...)
-						// Don't break, in the odd case of multiple occurrences of the flag.
-					}
-				}
+				d.Spec.Template.Spec.Containers[i].Args = append(container.Args, flagCRSConfigFile)
 			}
 		}
 	}
