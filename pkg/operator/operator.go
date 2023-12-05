@@ -749,23 +749,8 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 		klog.Warningf("Fail to load ConsoleConfig, AlertManager's externalURL may be outdated")
 	}
 
-	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
-	enableKSMCRSMetrics := false
-	_, err = o.client.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, client.VerticalPodAutoscalerCRDMetadataName, metav1.GetOptions{})
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			klog.Warningf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", client.VerticalPodAutoscalerCRDMetadataName)
-		} else {
-			// Fallback to last known state of CRS metrics generation.
-			enableKSMCRSMetrics = o.lastKnownEnableKSMCRSMetricsState
-		}
-	} else {
-		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", client.VerticalPodAutoscalerCRDMetadataName)
-		enableKSMCRSMetrics = true
-	}
-
 	// Record the last known state for enableKSMCRSMetrics.
-	o.lastKnownEnableKSMCRSMetricsState = enableKSMCRSMetrics
+	o.lastKnownEnableKSMCRSMetricsState = o.client.ShouldEnableKSMCRSMetrics(ctx, o.lastKnownEnableKSMCRSMetricsState)
 
 	factory := manifests.NewFactory(
 		o.namespace,
@@ -795,7 +780,7 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 				newTaskSpec("Prometheus", tasks.NewPrometheusTask(o.client, factory, config)),
 				newTaskSpec("Alertmanager", tasks.NewAlertmanagerTask(o.client, factory, config)),
 				newTaskSpec("NodeExporter", tasks.NewNodeExporterTask(o.client, factory)),
-				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory, enableKSMCRSMetrics)),
+				newTaskSpec("KubeStateMetrics", tasks.NewKubeStateMetricsTask(o.client, factory, o.lastKnownEnableKSMCRSMetricsState)),
 				newTaskSpec("OpenshiftStateMetrics", tasks.NewOpenShiftStateMetricsTask(o.client, factory)),
 				newTaskSpec("PrometheusAdapter", tasks.NewPrometheusAdapterTask(ctx, o.namespace, o.client, !o.metricsServerEnabled, factory, config)),
 				newTaskSpec("MetricsServer", tasks.NewMetricsServerTask(ctx, o.namespace, o.client, o.metricsServerEnabled, factory, config)),

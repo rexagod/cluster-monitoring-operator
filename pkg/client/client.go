@@ -1893,6 +1893,26 @@ func (c *Client) RegisterConsolePlugin(ctx context.Context, name string) error {
 	return errors.Wrapf(err, "registering console-plugin %q with console %q failed", name, clusterConsole)
 }
 
+// ShouldEnableKSMCRSMetrics checks if kube-state-metrics' custom-resource-state-based metrics generation should be enabled.
+func (c *Client) ShouldEnableKSMCRSMetrics(ctx context.Context, lastKnownEnableKSMCRSMetricsState bool) bool {
+	// Enable kube-state-metrics' custom-resource-state-based metrics if VPA CRD is installed within the cluster.
+	enableKSMCRSMetrics := false
+	_, err := c.ApiExtensionsInterface().ApiextensionsV1().CustomResourceDefinitions().Get(ctx, VerticalPodAutoscalerCRDMetadataName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Warningf("Failed to get %s CRD, skipping kube-state-metrics' custom-resource-state-based metrics generation", VerticalPodAutoscalerCRDMetadataName)
+		} else {
+			// Fallback to last known state of CRS metrics generation.
+			enableKSMCRSMetrics = lastKnownEnableKSMCRSMetricsState
+		}
+	} else {
+		klog.Infof("%s CRD found, enabling kube-state-metrics' custom-resource-state-based metrics", VerticalPodAutoscalerCRDMetadataName)
+		enableKSMCRSMetrics = true
+	}
+
+	return enableKSMCRSMetrics
+}
+
 // mergeMetadata merges labels and annotations from `existing` map into `required` one where `required` has precedence
 // over `existing` keys and values. Additionally function performs filtering of labels and annotations from `exiting` map
 // where keys starting from string defined in `metadataPrefix` are deleted. This prevents issues with preserving stale
