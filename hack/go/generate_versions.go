@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"github.com/blang/semver/v4"
+	"github.com/hashicorp/go-retryablehttp"
+	"github.com/olekukonko/tablewriter"
+	"gopkg.in/yaml.v3"
 	"io"
 	"log"
 	"net/http"
@@ -9,19 +14,15 @@ import (
 	"slices"
 	"sort"
 	"strings"
-
-	"github.com/blang/semver/v4"
-	"github.com/hashicorp/go-retryablehttp"
-	"github.com/olekukonko/tablewriter"
-	"gopkg.in/yaml.v3"
+	"time"
 )
 
 const (
-	mainBranch        = "master"
-	metricsServerRepo = "openshift/kubernetes-metrics-server"
-	versionFile       = "../../jsonnet/versions.yaml"
+	mainBranch          = "master"
+	metricsServerRepo   = "openshift/kubernetes-metrics-server"
+	versionFile         = "../../jsonnet/versions.yaml"
 	versionNotFound     = "N/A"
-	OCPVersionHeader   = " OCP Version"
+	OCPVersionHeader    = " OCP Version"
 	depsVersionsFile    = "../../Documentation/deps-versions.md"
 	versionFileComments = `---
 # This file is meant to be managed by hack/go/generate_versions.go script
@@ -146,7 +147,7 @@ func updateDepsVersionsFile(fileP string, components Components) error {
 		}
 		rows = append(rows, row)
 		err = releaseVersion.IncrementMinor()
-		if err != nil{
+		if err != nil {
 			return err
 		}
 	}
@@ -179,11 +180,14 @@ func getVersions(ref string, components Components) map[string]string {
 
 func getVersion(repo, ref string) (string, error) {
 	baseURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s", repo, ref)
-	link := fmt.Sprintf("%s/VERSION", baseURL)
+	links := []string{fmt.Sprintf("%s/VERSION", baseURL)}
 	if repo == metricsServerRepo {
-		link = fmt.Sprintf("%s/manifests/release/kustomization.yaml", baseURL)
+		links = []string{
+			fmt.Sprintf("%s/manifests/components/release/kustomization.yaml", baseURL),
+			fmt.Sprintf("%s/manifests/release/kustomization.yaml", baseURL),
+		}
 	}
-	raw, err := fetchVersion(link)
+	raw, err := fetchVersion(links)
 	if err != nil {
 		return "", err
 	}
@@ -199,20 +203,49 @@ func getVersion(repo, ref string) (string, error) {
 	return raw, nil
 }
 
-func fetchVersion(path string) (string, error) {
-	resp, err := retryablehttp.Get(path)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+// fetchVersion returns the first successful response from the provided paths, in an anti-workgroup style (async).
+func fetchVersion(paths []string) (string, error) {
+	var (
+		version string
+		err     error
+	)
+	versionChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("non 200 response")
+	for _, path := range paths {
+		go func(path string, cancel context.CancelFunc) {
+			if ctx.Err() != nil {
+				return
+			}
+			resp, err := retryablehttp.Get(path)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				errChan <- fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+				return
+			}
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			versionChan <- string(b)
+			cancel()
+		}(path, cancel)
 	}
 
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	select {
+	case version = <-versionChan:
+	case <-time.After(5 * time.Second):
+		if len(errChan) > 0 {
+			err = fmt.Errorf("timeout: %v", <-errChan)
+		}
 	}
-	return string(b), nil
+	cancel() // Prevent ctx leak, if the timeout is reached.
+
+	return version, err
 }
