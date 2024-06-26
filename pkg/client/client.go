@@ -25,6 +25,34 @@ import (
 	"strings"
 	"time"
 
+	admissionv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	extensionsobj "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	apiutilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	aggregatorclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
+	"k8s.io/utils/ptr"
+
 	"github.com/imdario/mergo"
 	configv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
@@ -41,31 +69,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoring "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned"
-	admissionv1 "k8s.io/api/admissionregistration/v1"
-	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	extensionsobj "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
-	apiutilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/metadata"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
-	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	aggregatorclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -81,6 +84,7 @@ type Client struct {
 	userWorkloadNamespace string
 
 	kclient     kubernetes.Interface
+	dclient     dynamic.Interface
 	mdataclient metadata.Interface
 	osmclient   openshiftmonitoringclientset.Interface
 	oscclient   openshiftconfigclientset.Interface
@@ -105,6 +109,14 @@ func NewForConfig(cfg *rest.Config, version string, namespace, userWorkloadNames
 			return nil, fmt.Errorf("creating kubernetes clientset client: %w", err)
 		}
 		client.kclient = kclient
+	}
+
+	if client.dclient == nil {
+		dclient, err := dynamic.NewForConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating dynamic clientset client: %w", err)
+		}
+		client.dclient = dclient
 	}
 
 	if client.eclient == nil {
@@ -200,6 +212,12 @@ type Option = func(*Client)
 func KubernetesClient(kclient kubernetes.Interface) Option {
 	return func(c *Client) {
 		c.kclient = kclient
+	}
+}
+
+func DynamicClient(dclient *dynamic.DynamicClient) Option {
+	return func(c *Client) {
+		c.dclient = dclient
 	}
 }
 
@@ -632,29 +650,72 @@ func (c *Client) GetAlertingRule(ctx context.Context, namespace, name string) (*
 	return c.osmclient.MonitoringV1().AlertingRules(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-func (c *Client) CreateOrUpdatePrometheus(ctx context.Context, p *monv1.Prometheus) error {
-	pclient := c.mclient.MonitoringV1().Prometheuses(p.GetNamespace())
-	existing, err := pclient.Get(ctx, p.GetName(), metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err := pclient.Create(ctx, p, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("creating Prometheus object failed: %w", err)
+func (c *Client) CreateOrUpdatePrometheus(ctx context.Context, p *monv1.Prometheus) (*bool, error) {
+	unstructuredPrometheusObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(p)
+	if err != nil {
+		return nil, fmt.Errorf("converting Prometheus object to unstructured failed: %w", err)
+	}
+	_, didUpdate, err := resourceapply.ApplyUnstructuredResourceImproved(
+		ctx,
+		c.dclient,
+		c.eventRecorder,
+		&unstructured.Unstructured{Object: unstructuredPrometheusObject},
+		c.resourceCache,
+		p.GroupVersionKind().GroupVersion().WithResource("prometheuses"),
+		prometheusDefaultingFunc,
+		nil,
+	)
+	if err != nil {
+		return &didUpdate, fmt.Errorf("updating Prometheus object failed: %w", err)
+	}
+
+	return &didUpdate, nil
+}
+
+func prometheusDefaultingFunc(unstructuredPrometheus *unstructured.Unstructured) {
+	// Cast to the corresponding structured representation.
+	structuredPrometheus := &monv1.Prometheus{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPrometheus.UnstructuredContent(), structuredPrometheus); err != nil {
+		klog.ErrorS(err, "failed to convert unstructured to structured Prometheus spec")
+		return
+	}
+
+	// Set defaults.
+	if structuredPrometheus.Spec.CommonPrometheusFields.ScrapeInterval == "" {
+		structuredPrometheus.Spec.CommonPrometheusFields.ScrapeInterval = "30s"
+	}
+	if len(structuredPrometheus.Spec.CommonPrometheusFields.ExternalLabels) == 0 {
+		structuredPrometheus.Spec.CommonPrometheusFields.ExternalLabels = nil
+	}
+	if len(structuredPrometheus.Spec.CommonPrometheusFields.EnableFeatures) == 0 {
+		structuredPrometheus.Spec.CommonPrometheusFields.EnableFeatures = nil
+	}
+	for i, container := range structuredPrometheus.Spec.CommonPrometheusFields.Containers {
+		for j, port := range container.Ports {
+			if port.Protocol == "" {
+				structuredPrometheus.Spec.CommonPrometheusFields.Containers[i].Ports[j].Protocol = "TCP"
+			}
 		}
-		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("retrieving Prometheus object failed: %w", err)
+	if structuredPrometheus.Spec.CommonPrometheusFields.PortName == "" {
+		structuredPrometheus.Spec.CommonPrometheusFields.PortName = "web"
+	}
+	if structuredPrometheus.Spec.Thanos == nil {
+		structuredPrometheus.Spec.Thanos = &monv1.ThanosSpec{}
+	}
+	if structuredPrometheus.Spec.Thanos.BlockDuration == "" {
+		structuredPrometheus.Spec.Thanos.BlockDuration = "2h"
+	}
+	if structuredPrometheus.Spec.EvaluationInterval == "" {
+		structuredPrometheus.Spec.EvaluationInterval = "30s"
 	}
 
-	required := p.DeepCopy()
-	mergeMetadata(&required.ObjectMeta, existing.ObjectMeta)
-
-	required.ResourceVersion = existing.ResourceVersion
-	_, err = pclient.Update(ctx, required, metav1.UpdateOptions{})
+	// Convert back to the corresponding unstructured representation and inject.
+	var err error
+	unstructuredPrometheus.Object, err = runtime.DefaultUnstructuredConverter.ToUnstructured(structuredPrometheus)
 	if err != nil {
-		return fmt.Errorf("updating Prometheus object failed: %w", err)
+		klog.ErrorS(err, "failed to convert structured to unstructured Prometheus")
 	}
-	return nil
 }
 
 func (c *Client) CreateOrUpdatePrometheusRule(ctx context.Context, p *monv1.PrometheusRule) error {

@@ -266,7 +266,7 @@ func (t *PrometheusUserWorkloadTask) create(ctx context.Context) error {
 	}
 
 	klog.V(4).Info("reconciling UserWorkload Prometheus object")
-	err = t.client.CreateOrUpdatePrometheus(ctx, p)
+	_, err = t.client.CreateOrUpdatePrometheus(ctx, p)
 	if err != nil {
 		return fmt.Errorf("reconciling UserWorkload Prometheus object failed: %w", err)
 	}
