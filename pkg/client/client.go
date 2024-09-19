@@ -649,9 +649,14 @@ func (c *Client) GetAlertingRule(ctx context.Context, namespace, name string) (*
 	return c.osmclient.MonitoringV1().AlertingRules(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-// NOTE: We don't use a defaulting function here, and resort only to the caching mechanism, since,
+// CreateOrUpdatePrometheus does not use a defaulting function, and resorts only to the caching mechanism, since,
 // * defaults for Prometheus should be introduced from its operator level, and,
 // * the defaulting approach generally requires hardcoding the default values, which adds on to the maintenance overhead.
+// NOTE: The return values establish the following matrix (w.r.t. the create or update verbs):
+// * true, nil   : verb action needed; operation successful,
+// * false, nil  : verb action not needed; operation skipped,
+// * true, error : verb action needed, operation unsuccessful.
+// * false, error: verb action may or may not be needed; operation unsuccessful,
 func (c *Client) CreateOrUpdatePrometheus(ctx context.Context, structuredRequiredPrometheus *monv1.Prometheus) (bool, error) {
 	unstructuredRequiredPrometheusObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(structuredRequiredPrometheus)
 	if err != nil {
