@@ -225,7 +225,10 @@ function(params)
     ),
 
     telemetryServiceMonitor: generateServiceMonitor.telemetry(
-      self.serviceMonitor, std.join('|', [])
+      super.serviceMonitor, std.join(
+        '|',
+        (import '../utils/telemetry-allowlist-and-monitors.libsonnet').monitorKeysToMetricsMap[cfg.namespace + '/' + 'node-exporter-telemetry']
+      )
     ),
 
     securityContextConstraints: {

@@ -169,7 +169,10 @@ function(params)
     ),
 
     telemetryServiceMonitorKubelet: generateServiceMonitor.telemetry(
-      self.serviceMonitorKubelet, std.join('|', [])
+      self.serviceMonitorKubelet, std.join(
+        '|',
+        (import '../utils/telemetry-allowlist-and-monitors.libsonnet').monitorKeysToMetricsMap[cfg.namespace + '/' + 'kubelet-telemetry']
+      )
     ),
 
 
