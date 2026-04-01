@@ -182,6 +182,16 @@ type DedicatedServiceMonitors struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
+// The `ResourceLabels` resource defines which Kubernetes labels to expose
+// as metrics for a given resource type.
+type ResourceLabels struct {
+	// Defines the Kubernetes resource name (for example, `jobs` or `cronjobs`).
+	Resource string `json:"resource"`
+	// Defines the list of Kubernetes labels to expose as metrics for this
+	// resource. Use `*` to expose all labels.
+	Labels []string `json:"labels"`
+}
+
 // The `KubeStateMetricsConfig` resource defines settings for the
 // `kube-state-metrics` agent.
 type KubeStateMetricsConfig struct {
@@ -193,11 +203,11 @@ type KubeStateMetricsConfig struct {
 	Tolerations []v1.Toleration `json:"tolerations,omitempty"`
 	// Defines a pod's topology spread constraints.
 	TopologySpreadConstraints []v1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
-	// Defines label-metrics' allow list for resources in addition to the default one.
-	// Currently, this is only supported for `jobs` and `cronjobs`, due to cardinality concerns.
-	// This follows the format: resource1=[label1,label2,labelN...],...,resourceN=[...],
-	// which is then validated and appended to the default labels' allow list.
-	AdditionalLabelsAllowList *string `json:"additionalLabelsAllowList,omitempty"`
+	// Defines additional resource labels to expose as metrics in addition to
+	// the default labels. Currently, only `jobs` and `cronjobs` resources are
+	// supported due to cardinality concerns. Each entry specifies a resource
+	// name and a list of label names (use `*` to expose all labels).
+	AdditionalResourceLabels []ResourceLabels `json:"additionalResourceLabels,omitempty"`
 }
 
 // The `PrometheusK8sConfig` resource defines settings for the Prometheus
